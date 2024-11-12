@@ -827,6 +827,9 @@ void submit_bio(struct bio *bio)
 		return;
 
 	if (bio_op(bio) == REQ_OP_READ) {
+		//#ifdef OPLUS_STORAGE_FS debug for bugid 7530538/7536896
+		BUG_ON(!bio->bi_iter.bi_size);
+		//#endif
 		task_io_account_read(bio->bi_iter.bi_size);
 		count_vm_events(PGPGIN, bio_sectors(bio));
 	} else if (bio_op(bio) == REQ_OP_WRITE) {

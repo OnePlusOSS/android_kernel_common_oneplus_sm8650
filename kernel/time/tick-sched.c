@@ -1150,6 +1150,8 @@ static void __tick_nohz_idle_stop_tick(struct tick_sched *ts)
  */
 void tick_nohz_idle_stop_tick(void)
 {
+	trace_android_vh_tick_nohz_idle_stop_tick(NULL);
+
 	__tick_nohz_idle_stop_tick(this_cpu_ptr(&tick_cpu_sched));
 }
 

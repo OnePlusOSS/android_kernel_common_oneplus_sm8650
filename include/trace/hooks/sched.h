@@ -388,6 +388,10 @@ DECLARE_HOOK(android_vh_sched_setaffinity_early,
 	TP_PROTO(struct task_struct *p, const struct cpumask *new_mask, bool *retval),
 	TP_ARGS(p, new_mask, retval));
 
+DECLARE_HOOK(android_vh_tick_nohz_idle_stop_tick,
+	TP_PROTO(void *unused),
+	TP_ARGS(unused));
+
 DECLARE_HOOK(android_vh_account_process_tick_gran,
 	TP_PROTO(int user_tick, int *ticks),
 	TP_ARGS(user_tick, ticks));
@@ -457,6 +461,10 @@ DECLARE_HOOK(android_vh_prio_inheritance,
 DECLARE_HOOK(android_vh_prio_restore,
 	TP_PROTO(int saved_prio),
 	TP_ARGS(saved_prio));
+
+DECLARE_HOOK(android_vh_task_ux_op,
+	TP_PROTO(struct task_struct *tsk, int op, void *buf),
+	TP_ARGS(tsk, op, buf));
 
 #endif /* _TRACE_HOOK_SCHED_H */
 /* This part must be outside protection */

@@ -33,6 +33,8 @@
 # define build_ww_mutex()	(false)
 # define ww_container_of(rtm)	NULL
 
+extern void rtmutex_wait_handler(struct rt_mutex_base *lock);
+
 static inline int __ww_mutex_add_waiter(struct rt_mutex_waiter *waiter,
 					struct rt_mutex *lock,
 					struct ww_acquire_ctx *ww_ctx)
@@ -1542,6 +1544,7 @@ static int __sched rt_mutex_slowlock_block(struct rt_mutex_base *lock,
 	int ret = 0;
 
 	trace_android_vh_rtmutex_wait_start(lock);
+	rtmutex_wait_handler(lock);
 	for (;;) {
 		/* Try to acquire the lock: */
 		if (try_to_take_rt_mutex(lock, current, waiter))

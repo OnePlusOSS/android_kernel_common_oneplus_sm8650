@@ -43,11 +43,63 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 #include "blk-ioprio.h"
+#ifdef CONFIG_OPLUS_RESCTRL
+#include "../drivers/soc/oplus/oplus_resctrl/resctrl.h"
+#endif
+
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+#include <trace/hooks/sched.h>
+static bool block_graded_thread_enable = false;
+static long bio_cnt = 0;           // total bio sumbit
+static long rt_bio_cnt = 0;        // total rt bio sumbit, part of bio_cnt
+static long ux_bio_cnt = 0;        // total ux bio sumbit, part of rt_bio_cnt
+static long rq_cnt = 0;            // total req sumbit
+static long rt_shed_rq = 0;        // total rt thread issue rq times
+static long rt_shed_rtrq = 0;      // total rt thread issue rt-rq times,  part of rt_shed_rq
+static long rt_shed = 0;           // total normal thread run times
+static long normal_shed = 0;        // queue rt-thread times
+static long need_normal_shed = 0;  // total queue normal-thread times
+static long need_rt_shed = 0;      // total queue rt-thread times
+static long cpu_dead = 0;          // total number of times ux/rt io cannot use rt threads
+module_param_named(block_graded_thread_enable, block_graded_thread_enable, bool, 0660);
+module_param_named(bio_cnt, bio_cnt, long, 0660);
+module_param_named(rt_bio_cnt, rt_bio_cnt, long, 0660);
+module_param_named(ux_bio_cnt, ux_bio_cnt, long, 0660);
+module_param_named(rq_cnt, rq_cnt, long, 0660);
+module_param_named(rt_shed_rq, rt_shed_rq, long, 0660);
+module_param_named(rt_shed_rtrq, rt_shed_rtrq, long, 0660);
+module_param_named(rt_shed, rt_shed, long, 0660);
+module_param_named(normal_shed, normal_shed, long, 0660);
+module_param_named(need_normal_shed, need_normal_shed, long, 0660);
+module_param_named(need_rt_shed, need_rt_shed, long, 0660);
+module_param_named(cpu_dead, cpu_dead, long, 0660);
+static struct kthread_worker **blk_workers;
+#endif
 
 static DEFINE_PER_CPU(struct llist_head, blk_cpu_done);
 
 static void blk_mq_poll_stats_start(struct request_queue *q);
 static void blk_mq_poll_stats_fn(struct blk_stat_callback *cb);
+
+#ifdef CONFIG_BLOCKIO_UX_OPT
+DEFINE_PER_CPU(__u32, block_ux_softirqs);
+unsigned long blk_send_ipi_counter = 0;
+extern bool should_queue_work_ux(struct bio *bio);
+void set_block_ux_softirqs(void)
+{
+	__this_cpu_or(block_ux_softirqs, 1);
+}
+
+__u32 get_block_ux_softirqs(void)
+{
+	return __this_cpu_read(block_ux_softirqs);
+}
+
+void clear_block_ux_softirqs(void)
+{
+	__this_cpu_write(block_ux_softirqs, 0);
+}
+#endif
 
 static int blk_mq_poll_stats_bkt(const struct request *rq)
 {
@@ -975,6 +1027,9 @@ static inline void blk_account_io_done(struct request *req, u64 now)
 	 * normal IO on queueing nor completion.  Accounting the
 	 * containing request is enough.
 	 */
+#ifdef CONFIG_OPLUS_RESCTRL
+	android_vh_blk_account_io_done_handler(NULL, req);
+#endif
 	if (blk_do_io_stat(req) && req->part &&
 	    !(req->rq_flags & RQF_FLUSH_SEQ))
 		__blk_account_io_done(req, now);
@@ -1126,6 +1181,18 @@ static int blk_softirq_cpu_dead(unsigned int cpu)
 
 static void __blk_mq_complete_request_remote(void *data)
 {
+#ifdef CONFIG_BLOCKIO_UX_OPT
+		struct request *rq = (struct request *)data;
+		struct bio *bio;
+
+		for (bio = rq->bio; bio; bio = bio->bi_next) {
+			if (should_queue_work_ux(bio)) {
+				set_block_ux_softirqs();
+				break;
+			}
+		}
+#endif
+
 	__raise_softirq_irqoff(BLOCK_SOFTIRQ);
 }
 
@@ -1174,8 +1241,19 @@ static void blk_mq_raise_softirq(struct request *rq)
 
 	preempt_disable();
 	list = this_cpu_ptr(&blk_cpu_done);
-	if (llist_add(&rq->ipi_list, list))
+	if (llist_add(&rq->ipi_list, list)) {
+#ifdef CONFIG_BLOCKIO_UX_OPT
+		struct bio *bio;
+
+		for (bio = rq->bio; bio; bio = bio->bi_next) {
+			if (should_queue_work_ux(bio)) {
+				set_block_ux_softirqs();
+				break;
+			}
+		}
+#endif
 		raise_softirq(BLOCK_SOFTIRQ);
+	}
 	preempt_enable();
 }
 
@@ -1194,6 +1272,9 @@ bool blk_mq_complete_request_remote(struct request *rq)
 		return false;
 
 	if (blk_mq_complete_need_ipi(rq)) {
+#ifdef CONFIG_BLOCKIO_UX_OPT
+		blk_send_ipi_counter++;
+#endif
 		blk_mq_complete_send_ipi(rq);
 		return true;
 	}
@@ -2048,6 +2129,16 @@ bool blk_mq_dispatch_rq_list(struct blk_mq_hw_ctx *hctx, struct list_head *list,
 		 */
 		if (nr_budgets)
 			nr_budgets--;
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+		rq_cnt++;
+
+		if (task_is_realtime(current)) {
+			rt_shed_rq++;
+			if (IOPRIO_PRIO_CLASS(rq->ioprio) == IOPRIO_CLASS_RT) {
+				rt_shed_rtrq++;
+			}
+		}
+#endif
 		ret = q->mq_ops->queue_rq(hctx, &bd);
 		switch (ret) {
 		case BLK_STS_OK:
@@ -2226,6 +2317,30 @@ select_cpu:
 	return next_cpu;
 }
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+extern void dm_bufio_shrink_scan_bypass(unsigned long task, bool *process);
+static inline bool test_task_ux(struct task_struct *task)
+{
+	bool ux = false;
+	//TODO: use trace_android_vh_task_ux_op(task, 0, &ux)
+	dm_bufio_shrink_scan_bypass((unsigned long)task, &ux);
+
+	return ux;
+}
+
+static inline bool need_high_pri_worker(struct request_queue *q)
+{
+	if (unlikely(block_graded_thread_enable == false)) {
+		return false;
+	}
+
+	if (test_task_ux(current) || task_is_realtime(current)) {
+		return true;
+	} else
+		return false;
+}
+#endif
+
 /**
  * __blk_mq_delay_run_hw_queue - Run (or schedule to run) a hardware queue.
  * @hctx: Pointer to the hardware queue to run.
@@ -2238,6 +2353,10 @@ select_cpu:
 static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 					unsigned long msecs)
 {
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	struct hctx_sched_entry *entry;
+	int cpu;
+#endif
 	if (unlikely(blk_mq_hctx_stopped(hctx)))
 		return;
 
@@ -2247,9 +2366,27 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 			return;
 		}
 	}
-
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	if (hctx->android_kabi_reserved1 && need_high_pri_worker(hctx->queue)) {
+		need_rt_shed++;
+		entry = (struct hctx_sched_entry *)hctx->android_kabi_reserved1;
+		cpu = blk_mq_hctx_next_cpu(hctx);
+		if (unlikely(cpu == WORK_CPU_UNBOUND)) {
+			pr_info("hctx's cpu%d offine, still use kblockd", hctx->next_cpu);
+			cpu_dead++;
+			goto use_kblockd;
+		} else
+			kthread_mod_delayed_work(blk_workers[cpu],
+				&entry->dwork, msecs_to_jiffies(msecs));
+	} else {
+use_kblockd:
+		need_normal_shed++;
+#endif
 	kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx), &hctx->run_work,
 				    msecs_to_jiffies(msecs));
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	}
+#endif
 }
 
 /**
@@ -2459,7 +2596,9 @@ static void blk_mq_run_work_fn(struct work_struct *work)
 	struct blk_mq_hw_ctx *hctx;
 
 	hctx = container_of(work, struct blk_mq_hw_ctx, run_work.work);
-
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	normal_shed++;
+#endif
 	/*
 	 * If we are stopped, don't run the queue.
 	 */
@@ -2468,6 +2607,25 @@ static void blk_mq_run_work_fn(struct work_struct *work)
 
 	__blk_mq_run_hw_queue(hctx);
 }
+
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+static void blk_mq_thread_work(struct kthread_work *work)
+{
+	struct hctx_sched_entry *entry;
+
+	current->flags |= PF_MEMALLOC_NOIO;
+	entry = container_of(work, struct hctx_sched_entry, dwork.work);
+	rt_shed++;
+	/*
+	 * If we are stopped, don't run the queue.
+	 */
+	if (blk_mq_hctx_stopped(entry->hctx))
+		return;
+
+	__blk_mq_run_hw_queue(entry->hctx);
+
+}
+#endif
 
 static inline void __blk_mq_insert_req_list(struct blk_mq_hw_ctx *hctx,
 					    struct request *rq,
@@ -2919,6 +3077,17 @@ static void bio_set_ioprio(struct bio *bio)
 	if (IOPRIO_PRIO_CLASS(bio->bi_ioprio) == IOPRIO_CLASS_NONE)
 		bio->bi_ioprio = get_current_ioprio();
 	blkcg_set_ioprio(bio);
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	bio_cnt++;
+
+	if (IOPRIO_PRIO_CLASS(bio->bi_ioprio) == IOPRIO_CLASS_RT) {
+		rt_bio_cnt++;
+	} else if (test_task_ux(current)) {
+		bio->bi_ioprio =  IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 4);
+		rt_bio_cnt++;
+		ux_bio_cnt++;
+	}
+#endif
 }
 
 /**
@@ -3641,6 +3810,10 @@ static int blk_mq_init_hctx(struct request_queue *q,
 		struct blk_mq_tag_set *set,
 		struct blk_mq_hw_ctx *hctx, unsigned hctx_idx)
 {
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	struct hctx_sched_entry *entry =
+			(struct hctx_sched_entry *)hctx->android_kabi_reserved1;
+#endif
 	hctx->queue_num = hctx_idx;
 
 	if (!(hctx->flags & BLK_MQ_F_STACKING))
@@ -3661,6 +3834,12 @@ static int blk_mq_init_hctx(struct request_queue *q,
 	if (xa_insert(&q->hctx_table, hctx_idx, hctx, GFP_KERNEL))
 		goto exit_flush_rq;
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	if (entry) {
+		entry->hctx = hctx;
+		kthread_init_delayed_work(&entry->dwork, blk_mq_thread_work);
+	}
+#endif
 	return 0;
 
  exit_flush_rq:
@@ -3725,8 +3904,21 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 
 	blk_mq_hctx_kobj_init(hctx);
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	if (set->nr_hw_queues > 1) {
+		hctx->android_kabi_reserved1 =
+                            (u64)kzalloc_node(sizeof(struct hctx_sched_entry),
+                                   gfp, hctx->numa_node);
+		if (!hctx->android_kabi_reserved1)
+			goto free_fq;
+	}
+#endif
 	return hctx;
-
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+ free_fq:
+	kfree(&hctx->fq->flush_rq);
+	kfree(&hctx->fq);
+#endif
  free_bitmap:
 	sbitmap_free(&hctx->ctx_map);
  free_ctxs:
@@ -4956,17 +5148,68 @@ void blk_mq_cancel_work_sync(struct request_queue *q)
 
 		cancel_delayed_work_sync(&q->requeue_work);
 
-		queue_for_each_hw_ctx(q, hctx, i)
+		queue_for_each_hw_ctx(q, hctx, i) {
 			cancel_delayed_work_sync(&hctx->run_work);
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+			if (hctx->android_kabi_reserved1) {
+				struct hctx_sched_entry *entry =
+					(struct hctx_sched_entry *)hctx->android_kabi_reserved1;
+				kthread_cancel_delayed_work_sync(&entry->dwork);
+			}
+#endif
+		}
 	}
 }
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+#define BLK_MQ_DTS_PATH "/soc/oplus,blk-mq"
+struct device_node;
+extern int of_property_read_string(const struct device_node *np, const char *propname,
+ 				const char **out_string);
+extern struct device_node *of_find_node_opts_by_path(const char *path,
+  	const char **opts);
+static const char *of_blk_feature_read(char *name)
+{
+	const char *value = NULL;
+
+	if (name) {
+		struct device_node *np = of_find_node_opts_by_path(BLK_MQ_DTS_PATH, NULL);
+		if (np) {
+			of_property_read_string(np, name, &value);
+		}
+	}
+
+	return value;
+}
+#endif
 static int __init blk_mq_init(void)
 {
 	int i;
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	const char *config = of_blk_feature_read("block_graded_thread_enable");
+	if (config && strcmp(config, "y") == 0)
+		block_graded_thread_enable = true;
+	else
+		block_graded_thread_enable = false;
 
-	for_each_possible_cpu(i)
+	blk_workers = kmalloc(num_possible_cpus() * sizeof(struct kthread_worker *),GFP_KERNEL);
+	if (!blk_workers) {
+		pr_err("malloc blk_workers fail\n");
+		return -ENOMEM;
+	}
+#endif
+
+	for_each_possible_cpu(i) {
 		init_llist_head(&per_cpu(blk_cpu_done, i));
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+		blk_workers[i] = kthread_create_worker_on_cpu(i, 0, "blk_run_queue%d", i);
+		if (IS_ERR(blk_workers[i])) {
+			pr_err("create blk_workers[%d] fail\n",i);
+			return -ENOMEM;
+		}
+		sched_set_fifo_low(blk_workers[i]->task);
+#endif
+	}
 	open_softirq(BLOCK_SOFTIRQ, blk_done_softirq);
 
 	cpuhp_setup_state_nocalls(CPUHP_BLOCK_SOFTIRQ_DEAD,

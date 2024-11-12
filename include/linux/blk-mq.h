@@ -15,6 +15,19 @@ struct blk_flush_queue;
 #define BLKDEV_MIN_RQ	4
 #define BLKDEV_DEFAULT_RQ	128
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+#include <linux/sched.h>
+#include <linux/kthread.h>
+#include <linux/sched/rt.h>
+#include <uapi/linux/sched/types.h>
+
+struct blk_mq_hw_ctx;
+struct hctx_sched_entry {
+	struct blk_mq_hw_ctx *hctx;
+	struct kthread_delayed_work 	dwork;
+};
+#endif
+
 enum rq_end_io_ret {
 	RQ_END_IO_NONE,
 	RQ_END_IO_FREE,

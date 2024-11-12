@@ -287,6 +287,9 @@ static void recover_inline_flags(struct inode *inode, struct f2fs_inode *ri)
 static int recover_inode(struct inode *inode, struct page *page)
 {
 	struct f2fs_inode *raw = F2FS_INODE(page);
+#ifdef CONFIG_F2FS_FS_DEDUP
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+#endif
 	char *name;
 	int err;
 
@@ -334,6 +337,10 @@ static int recover_inode(struct inode *inode, struct page *page)
 				le16_to_cpu(raw->i_gc_failures);
 
 	recover_inline_flags(inode, raw);
+#ifdef CONFIG_F2FS_FS_DEDUP
+	if (f2fs_inode_support_dedup(sbi, inode))
+		get_dedup_flags_info(inode, raw);
+#endif
 
 	f2fs_mark_inode_dirty_sync(inode, true);
 
@@ -720,7 +727,10 @@ retry_prev:
 						ERROR_INVALID_BLKADDR);
 				goto err;
 			}
-
+#ifdef CONFIG_F2FS_SEQZONE
+			if (f2fs_seqzone_file(dn.inode))
+				dn.seqzone_index = seqzone_index(dn.inode, page, dn.ofs_in_node);
+#endif
 			/* write dummy data page */
 			f2fs_replace_block(sbi, &dn, src, dest,
 						ni.version, false, false);

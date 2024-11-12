@@ -9,6 +9,8 @@
 #include <linux/rcu_sync.h>
 #include <linux/lockdep.h>
 
+extern void android_vh_pcpu_rwsem_handler(u64 sem, struct task_struct *tsk, unsigned long jiffies);
+
 void _trace_android_vh_record_pcpu_rwsem_starttime(
 		struct task_struct *tsk, unsigned long settime);
 
@@ -77,6 +79,7 @@ static inline void percpu_down_read(struct percpu_rw_semaphore *sem)
 	 */
 	preempt_enable();
 	_trace_android_vh_record_pcpu_rwsem_starttime(current, jiffies);
+	android_vh_pcpu_rwsem_handler((u64)sem, current, jiffies);
 }
 
 static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
@@ -100,6 +103,7 @@ static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
 	if (ret) {
 		_trace_android_vh_record_pcpu_rwsem_time_early(jiffies, sem);
 		_trace_android_vh_record_pcpu_rwsem_starttime(current, jiffies);
+		android_vh_pcpu_rwsem_handler((u64)sem, current, jiffies);
 		rwsem_acquire_read(&sem->dep_map, 0, 1, _RET_IP_);
 	}
 
@@ -132,6 +136,7 @@ static inline void percpu_up_read(struct percpu_rw_semaphore *sem)
 	}
 	_trace_android_vh_record_pcpu_rwsem_time_early(0, sem);
 	_trace_android_vh_record_pcpu_rwsem_starttime(current, 0);
+	android_vh_pcpu_rwsem_handler((u64)sem, current, 0);
 	preempt_enable();
 }
 

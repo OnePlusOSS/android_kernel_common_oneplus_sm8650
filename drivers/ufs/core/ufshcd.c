@@ -6500,6 +6500,9 @@ static bool ufshcd_abort_all(struct ufs_hba *hba)
 				needs_reset = true;
 				goto out;
 			}
+			if (!ufshcd_cmd_inflight(lrbp->cmd)) {
+				continue;
+			}
 			hwq = ufshcd_mcq_req_to_hwq(hba, scsi_cmd_to_rq(lrbp->cmd));
 			spin_lock_irqsave(&hwq->cq_lock, flags);
 			if (ufshcd_cmd_inflight(lrbp->cmd))

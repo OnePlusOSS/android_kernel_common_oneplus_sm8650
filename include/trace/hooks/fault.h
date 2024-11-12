@@ -20,7 +20,7 @@ DECLARE_RESTRICTED_HOOK(android_rvh_do_sp_pc_abort,
 	TP_PROTO(unsigned long addr, unsigned long esr, struct pt_regs *regs),
 	TP_ARGS(addr, esr, regs),
 	TP_CONDITION(!user_mode(regs)));
-
+	
 DECLARE_HOOK(android_vh_try_fixup_sea,
 	TP_PROTO(unsigned long addr, unsigned long esr, struct pt_regs *regs,
 		 bool *can_fixup),

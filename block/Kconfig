@@ -231,6 +231,15 @@ config BLOCK_HOLDER_DEPRECATED
 config BLK_MQ_STACKING
 	bool
 
+config BLOCKIO_UX_OPT
+	bool
+	default y
+
+config BLK_MQ_USE_LOCAL_THREAD
+	bool
+	select BLOCKIO_UX_OPT
+	default y
+
 source "block/Kconfig.iosched"
 
 endif # BLOCK
