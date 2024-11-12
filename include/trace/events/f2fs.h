@@ -2208,8 +2208,11 @@ DECLARE_EVENT_CLASS(f2fs__rw_start,
 		__string(cmdline, command)
 		__field(pid_t, pid)
 		__field(ino_t, ino)
+#ifdef CONFIG_F2FS_APPBOOST
+		__field(u64, mtime)
+		__field(u32, i_generation)
+#endif
 	),
-
 	TP_fast_assign(
 		/*
 		 * Replace the spaces in filenames and cmdlines
@@ -2225,13 +2228,24 @@ DECLARE_EVENT_CLASS(f2fs__rw_start,
 		(void)strreplace(__get_str(cmdline), ' ', '_');
 		__entry->pid = pid;
 		__entry->ino = inode->i_ino;
+#ifdef CONFIG_F2FS_APPBOOST
+		__entry->mtime = timespec64_to_ns(&inode->i_mtime);
+		__entry->i_generation = inode->i_generation;
+#endif
 	),
-
+#ifdef CONFIG_F2FS_APPBOOST
+	TP_printk("entry_name %s, offset %llu, bytes %d, cmdline %s,"
+		" pid %d, i_size %llu, ino %lu, mtime %llu, i_generation %u",
+		__get_str(pathbuf), __entry->offset, __entry->bytes,
+		__get_str(cmdline), __entry->pid, __entry->i_size,
+		(unsigned long) __entry->ino, __entry->mtime,  __entry->i_generation)
+#else
 	TP_printk("entry_name %s, offset %llu, bytes %d, cmdline %s,"
 		" pid %d, i_size %llu, ino %lu",
 		__get_str(pathbuf), __entry->offset, __entry->bytes,
 		__get_str(cmdline), __entry->pid, __entry->i_size,
 		(unsigned long) __entry->ino)
+#endif
 );
 
 DECLARE_EVENT_CLASS(f2fs__rw_end,
@@ -2281,12 +2295,128 @@ DEFINE_EVENT(f2fs__rw_start, f2fs_datawrite_start,
 );
 
 DEFINE_EVENT(f2fs__rw_end, f2fs_datawrite_end,
-
 	TP_PROTO(struct inode *inode, loff_t offset, int bytes),
 
 	TP_ARGS(inode, offset, bytes)
 );
 
+#ifdef CONFIG_F2FS_FS_DEDUP
+DECLARE_EVENT_CLASS(f2fs__dedup_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner),
+
+	TP_STRUCT__entry(
+		__field(dev_t,  dev)
+		__field(ino_t,  ino)
+		__field(ino_t,  pino)
+		__field(loff_t, size)
+		__field(unsigned int, nlink)
+		__field(ino_t,  inner_ino)
+		__field(unsigned int, inner_nlink)
+	),
+
+	TP_fast_assign(
+		__entry->dev    = inode->i_sb->s_dev;
+		__entry->ino    = inode->i_ino;
+		__entry->pino   = F2FS_I(inode)->i_pino;
+		__entry->nlink  = inode->i_nlink;
+		__entry->size   = inode->i_size;
+		__entry->inner_ino      = inner->i_ino;
+		__entry->inner_nlink    = inner->i_nlink;
+	),
+
+	TP_printk("dev = (%d,%d), ino = %lu, pino = %lu, "
+		"i_size = %lld, i_nlink = %u, "
+		"inner = %lu, inner i_nlink = %u",
+		show_dev_ino(__entry),
+		(unsigned long)__entry->pino,
+		__entry->size,
+		(unsigned int)__entry->nlink,
+		(unsigned long)__entry->inner_ino,
+		(unsigned int)__entry->inner_nlink)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_ioc_create_layered_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_ioc_dedup_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_revoke_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_revoke_fail,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_dec_inner_link,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DECLARE_EVENT_CLASS(f2fs__dedup_map,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner),
+
+	TP_STRUCT__entry(
+		__field(dev_t,  dev)
+		__field(ino_t,  ino)
+		__field(loff_t, size)
+		__field(ino_t,  inner_ino)
+		__field(unsigned int, inner_nlink)
+	),
+
+	TP_fast_assign(
+		__entry->dev    = inode->i_sb->s_dev;
+		__entry->ino    = inode->i_ino;
+		__entry->size   = inode->i_size;
+		__entry->inner_ino      = inner->i_ino;
+		__entry->inner_nlink    = inner->i_nlink;
+	),
+
+	TP_printk("dev = (%d,%d), outer ino = %lu, i_size = %lld, "
+		"map to inner ino = %lu, inner i_nlink = %u",
+		show_dev_ino(__entry),
+		__entry->size,
+		(unsigned long)__entry->inner_ino,
+		(unsigned int)__entry->inner_nlink)
+);
+
+DEFINE_EVENT(f2fs__dedup_map, f2fs_dedup_map_readpage,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_map, f2fs_dedup_map_blocks,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+#endif /* CONFIG_F2FS_FS_DEDUP */
 #endif /* _TRACE_F2FS_H */
 
  /* This part must be outside protection */

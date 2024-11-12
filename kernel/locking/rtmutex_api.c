@@ -8,6 +8,7 @@
 #define RT_MUTEX_BUILD_MUTEX
 #include "rtmutex.c"
 
+extern void rtmutex_lock_handler(u64 lock, struct task_struct *tsk, unsigned long jiffies);
 /*
  * Max number of times we'll walk the boosting chain:
  */
@@ -31,8 +32,10 @@ static __always_inline int __rt_mutex_lock_common(struct rt_mutex *lock,
 	ret = __rt_mutex_lock(&lock->rtmutex, state);
 	if (ret)
 		mutex_release(&lock->dep_map, _RET_IP_);
-	else
+	else {
 		trace_android_vh_record_rtmutex_lock_starttime(current, jiffies);
+		rtmutex_lock_handler((u64)lock, current, jiffies);
+	}
 	return ret;
 }
 
@@ -127,6 +130,7 @@ int __sched rt_mutex_trylock(struct rt_mutex *lock)
 	ret = __rt_mutex_trylock(&lock->rtmutex);
 	if (ret) {
 		trace_android_vh_record_rtmutex_lock_starttime(current, jiffies);
+		rtmutex_lock_handler((u64)lock, current, jiffies);
 		mutex_acquire(&lock->dep_map, 0, 1, _RET_IP_);
 	}
 
@@ -142,6 +146,7 @@ EXPORT_SYMBOL_GPL(rt_mutex_trylock);
 void __sched rt_mutex_unlock(struct rt_mutex *lock)
 {
 	trace_android_vh_record_rtmutex_lock_starttime(current, 0);
+	rtmutex_lock_handler((u64)lock, current, 0);
 	mutex_release(&lock->dep_map, _RET_IP_);
 	__rt_mutex_unlock(&lock->rtmutex);
 }

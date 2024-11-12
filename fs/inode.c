@@ -279,9 +279,16 @@ static struct inode *alloc_inode(struct super_block *sb)
 	return inode;
 }
 
+#ifdef CONFIG_BLOCKIO_UX_OPT
+extern void check_destory_protect_inode(struct inode *inode);
+#endif
+
 void __destroy_inode(struct inode *inode)
 {
 	BUG_ON(inode_has_buffers(inode));
+#ifdef CONFIG_BLOCKIO_UX_OPT
+	check_destory_protect_inode(inode);
+#endif
 	inode_detach_wb(inode);
 	security_inode_free(inode);
 	fsnotify_inode_delete(inode);

@@ -700,7 +700,13 @@ static int dd_init_sched(struct request_queue *q, struct elevator_type *e)
 	dd->prio_aging_expire = prio_aging_expire;
 	spin_lock_init(&dd->lock);
 	spin_lock_init(&dd->zone_lock);
-
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	if (q->nr_hw_queues >= 1) {
+		dd->fifo_expire[DD_READ] = HZ / 100;
+		dd->fifo_expire[DD_WRITE] = HZ / 5;
+		dd->prio_aging_expire = 1 * HZ;
+	}
+#endif
 	/* We dispatch from request queue wide instead of hw queue */
 	blk_queue_flag_set(QUEUE_FLAG_SQ_SCHED, q);
 

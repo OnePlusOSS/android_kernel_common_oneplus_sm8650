@@ -172,7 +172,7 @@ static unsigned int count_plts(Elf64_Sym *syms, Elf64_Rela *rela, int num,
 		switch (ELF64_R_TYPE(rela[i].r_info)) {
 		case R_AARCH64_JUMP26:
 		case R_AARCH64_CALL26:
-			if (!IS_ENABLED(CONFIG_RANDOMIZE_BASE))
+			if ((!IS_ENABLED(CONFIG_RANDOMIZE_BASE)) && (!IS_ENABLED(CONFIG_KASAN)) && (!IS_ENABLED(CONFIG_KCSAN)))
 				break;
 
 			/*
@@ -274,7 +274,7 @@ static int partition_branch_plt_relas(Elf64_Sym *syms, Elf64_Rela *rela,
 {
 	int i = 0, j = numrels - 1;
 
-	if (!IS_ENABLED(CONFIG_RANDOMIZE_BASE))
+	if ((!IS_ENABLED(CONFIG_RANDOMIZE_BASE)) && (!IS_ENABLED(CONFIG_KASAN)) && (!IS_ENABLED(CONFIG_KCSAN)))
 		return 0;
 
 	while (i < j) {

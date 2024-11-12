@@ -3405,6 +3405,7 @@
   __traceiter_android_rvh_shmem_get_folio
   __traceiter_android_rvh_show_max_freq
   __traceiter_android_rvh_tick_entry
+  __traceiter_android_vh_try_fixup_sea
   __traceiter_android_rvh_try_to_wake_up
   __traceiter_android_rvh_try_to_wake_up_success
   __traceiter_android_rvh_ttwu_cond
@@ -3556,6 +3557,7 @@
   __tracepoint_android_rvh_shmem_get_folio
   __tracepoint_android_rvh_show_max_freq
   __tracepoint_android_rvh_tick_entry
+  __tracepoint_android_vh_try_fixup_sea
   __tracepoint_android_rvh_try_to_wake_up
   __tracepoint_android_rvh_try_to_wake_up_success
   __tracepoint_android_rvh_ttwu_cond
@@ -3808,6 +3810,7 @@
   usb_autopm_put_interface_async
   usb_bus_idr
   usb_bus_idr_lock
+  usb_check_bulk_endpoints
   usb_clear_halt
   usb_composite_setup_continue
   usb_control_msg

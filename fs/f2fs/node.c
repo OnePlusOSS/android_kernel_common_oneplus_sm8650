@@ -753,6 +753,38 @@ got:
 	return level;
 }
 
+#ifdef CONFIG_F2FS_SEQZONE
+u32 seqzone_index(struct inode *inode,
+			struct page *node_page, unsigned int offset)
+{
+	struct f2fs_node *raw_node;
+	__le32 *addr_array;
+	int base = 0;
+	bool is_inode = IS_INODE(node_page);
+	int addrs = DEF_ADDRS_PER_BLOCK / 2;
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	raw_node = F2FS_NODE(node_page);
+
+	if (is_inode) {
+		int xattr_addrs = 0;
+		if (f2fs_sb_has_flexible_inline_xattr(sbi))
+			xattr_addrs = le16_to_cpu(raw_node->i.i_inline_xattr_size);
+		else if (raw_node->i.i_inline & F2FS_INLINE_XATTR)
+			xattr_addrs = DEFAULT_INLINE_XATTR_ADDRS;
+
+		if (!inode)
+			/* from GC path only */
+			base = offset_in_addr(&raw_node->i);
+		else if (f2fs_has_extra_attr(inode))
+			base = get_extra_isize(inode);
+		addrs = (DEF_ADDRS_PER_INODE - base - xattr_addrs) / 2;
+	}
+
+	addr_array = blkaddr_in_node(raw_node);
+	return le32_to_cpu(addr_array[base + offset + addrs]);
+}
+#endif
+
 /*
  * Caller should call f2fs_put_dnode(dn).
  * Also, it should grab and release a rwsem by calling f2fs_lock_op() and
@@ -868,6 +900,11 @@ int f2fs_get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
 					F2FS_I(dn->inode)->i_cluster_size,
 					c_len);
 	}
+#ifdef CONFIG_F2FS_SEQZONE
+	if (f2fs_seqzone_file(dn->inode))
+		dn->seqzone_index = seqzone_index(dn->inode,
+					dn->node_page, dn->ofs_in_node);
+#endif
 out:
 	return 0;
 
@@ -2735,11 +2772,11 @@ recover_xnid:
 	f2fs_update_inode_page(inode);
 
 	/* 3: update and set xattr node page dirty */
-	if (page) {
+	if (page)
 		memcpy(F2FS_NODE(xpage), F2FS_NODE(page),
 				VALID_XATTR_BLOCK_SIZE);
-		set_page_dirty(xpage);
-	}
+
+	set_page_dirty(xpage);
 	f2fs_put_page(xpage, 1);
 
 	return 0;

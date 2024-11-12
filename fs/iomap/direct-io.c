@@ -321,8 +321,14 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 		}
 
 		bio = iomap_dio_alloc_bio(iter, dio, nr_pages, bio_opf);
+#ifdef CONFIG_F2FS_SEQZONE
+		fscrypt_set_bio_crypt_ctx(bio, inode, iomap->android_kabi_reserved1 ?
+					  (loff_t)(iomap->android_kabi_reserved1) : pos >> inode->i_blkbits,
+					  GFP_KERNEL);
+#else
 		fscrypt_set_bio_crypt_ctx(bio, inode, pos >> inode->i_blkbits,
 					  GFP_KERNEL);
+#endif
 		bio->bi_iter.bi_sector = iomap_sector(iomap, pos);
 		bio->bi_ioprio = dio->iocb->ki_ioprio;
 		bio->bi_private = dio;

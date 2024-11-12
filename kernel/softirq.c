@@ -63,6 +63,11 @@ DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
 #endif
 
+#ifdef CONFIG_BLOCKIO_UX_OPT
+extern __u32 get_block_ux_softirqs(void);
+extern void clear_block_ux_softirqs(void);
+unsigned long counter, total_us, max_us, min_us, aver_us, restart_time;
+#endif
 static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
 
 DEFINE_PER_CPU(struct task_struct *, ksoftirqd);
@@ -595,6 +600,9 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 
 restart:
 	/* Reset the pending bitmask before enabling irqs */
+#ifdef CONFIG_BLOCKIO_UX_OPT
+	clear_block_ux_softirqs();
+#endif
 	set_softirq_pending(deferred);
 	set_active_softirqs(pending);
 
@@ -642,6 +650,53 @@ restart:
 			goto restart;
 	}
 
+#ifdef CONFIG_BLOCKIO_UX_OPT
+	if (get_block_ux_softirqs() && local_softirq_pending()) {
+		local_irq_enable();
+		if (local_softirq_pending() & (1 << BLOCK_SOFTIRQ)) {
+			unsigned int vec_nr;
+			ktime_t start, end, delta;
+			ktime_t start_tmp, end_tmp;
+			start =  ktime_get();
+restart_act_block:
+			clear_block_ux_softirqs();
+			set_softirq_pending(local_softirq_pending() & (~(1 << BLOCK_SOFTIRQ)));
+
+			h = softirq_vec + BLOCK_SOFTIRQ;
+			vec_nr = h - softirq_vec;
+
+			trace_softirq_entry(vec_nr);
+			start_tmp =  ktime_get();
+			h->action(h);
+			end_tmp = ktime_get();
+			delta = ktime_us_delta(end_tmp, start_tmp);
+			trace_softirq_exit(vec_nr);
+
+			counter++;
+			total_us += delta;
+
+			if (max_us < delta)
+				max_us = delta;
+			if (min_us > delta)
+				min_us = delta;
+
+			aver_us = total_us / counter;
+
+
+			if (local_softirq_pending() & (1 << BLOCK_SOFTIRQ)
+					&& get_block_ux_softirqs()) {
+				end = ktime_get();
+				if (ktime_us_delta(end, start) < 1000) {
+					goto restart_act_block;
+				}
+			}
+		}
+		local_irq_disable();
+
+		pending = local_softirq_pending();
+		deferred = softirq_deferred_for_rt(&pending);
+	}
+#endif
 	if (pending | deferred)
 		wakeup_softirqd();
 

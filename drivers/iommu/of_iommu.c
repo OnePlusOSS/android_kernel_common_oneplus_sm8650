@@ -127,6 +127,7 @@ const struct iommu_ops *of_iommu_configure(struct device *dev,
 			mutex_unlock(&iommu_probe_device_lock);
 			return fwspec->ops;
 		}
+
 		/* In the deferred case, start again from scratch */
 		iommu_fwspec_free(dev);
 	}

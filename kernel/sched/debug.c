@@ -339,7 +339,6 @@ static __init int sched_init_debug(void)
 #endif
 
 	debugfs_create_file("debug", 0444, debugfs_sched, NULL, &sched_debug_fops);
-
 	return 0;
 }
 late_initcall(sched_init_debug);

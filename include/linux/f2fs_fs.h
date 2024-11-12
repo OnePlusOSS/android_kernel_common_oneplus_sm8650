@@ -24,9 +24,12 @@
 #define NULL_ADDR		((block_t)0)	/* used as block_t addresses */
 #define NEW_ADDR		((block_t)-1)	/* used as block_t addresses */
 #define COMPRESS_ADDR		((block_t)-2)	/* used as compressed data flag */
+#define DEDUP_ADDR		((block_t)-1024)/* used as block_t addresses */
+#define SEQZONE_ADDR		((block_t)-1025)/* used as seqzone addresses */
 
 #define F2FS_BYTES_TO_BLK(bytes)	((bytes) >> F2FS_BLKSIZE_BITS)
 #define F2FS_BLK_TO_BYTES(blk)		((blk) << F2FS_BLKSIZE_BITS)
+#define F2FS_BLK_END_BYTES(blk)		(F2FS_BLK_TO_BYTES(blk + 1) - 1)
 
 /* 0, 1(node nid), 2(meta nid) are reserved node id */
 #define F2FS_RESERVED_NODE_NUM		3
@@ -330,9 +333,15 @@ struct f2fs_inode {
 			__u8 i_compress_algorithm;	/* compress algorithm */
 			__u8 i_log_cluster_size;	/* log of cluster size */
 			__le16 i_compress_flag;		/* compress flag */
-						/* 0 bit: chksum flag
-						 * [8,15] bits: compress level
-						 */
+							/* 0 bit: chksum flag
+							 * [1,2] bits: compress layout
+							 * 3 bit: readpage updates atime
+							 * [4,7] bits: reserved
+							 * [8,15] bits: compress level
+							 */
+			__le32 i_inner_ino;     /* for layered inode */
+			__le32 i_dedup_flags;   /* dedup file attributes */
+			__le32 i_dedup_rsvd;    /* reserved for dedup */
 			__le32 i_extra_end[0];	/* for attribute size calculation */
 		} __packed;
 		__le32 i_addr[DEF_ADDRS_PER_INODE];	/* Pointers to data blocks */

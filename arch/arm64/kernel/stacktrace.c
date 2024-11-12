@@ -231,3 +231,50 @@ noinline noinstr void arch_stack_walk(stack_trace_consume_fn consume_entry,
 
 	unwind(&state, consume_entry, cookie);
 }
+
+void get_backtrace(struct task_struct *task, unsigned long entry[],
+				int nr_entries)
+{
+        int layer_count = 0, count = 0;
+
+        struct stack_info stacks[] = {
+                stackinfo_get_task(task),
+                STACKINFO_CPU(irq),
+#if defined(CONFIG_VMAP_STACK)
+                STACKINFO_CPU(overflow),
+#endif
+#if defined(CONFIG_VMAP_STACK) && defined(CONFIG_ARM_SDE_INTERFACE)
+                STACKINFO_SDEI(normal),
+                STACKINFO_SDEI(critical),
+#endif
+#ifdef CONFIG_EFI
+                STACKINFO_EFI,
+#endif
+        };
+        struct unwind_state state = {
+                .stacks = stacks,
+                .nr_stacks = ARRAY_SIZE(stacks),
+        };
+
+        if (!task || task == current || task->__state == TASK_RUNNING)
+                return;
+
+	/* Must pair with put_task_stack. */
+        if (!try_get_task_stack(task))
+                return;
+
+        unwind_init_from_task(&state, task);
+
+        while(count++ <= 16) {
+		if (!in_sched_functions(state.pc)) {
+			entry[layer_count++] = state.pc;
+			if (nr_entries == layer_count)
+				break;
+		}
+		if (unwind_next(&state) < 0) {
+			break;
+		}
+	}
+	put_task_stack(task);
+}
+EXPORT_SYMBOL_GPL(get_backtrace);

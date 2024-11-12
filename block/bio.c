@@ -322,6 +322,20 @@ static void bio_chain_endio(struct bio *bio)
 	bio_endio(__bio_chain_endio(bio));
 }
 
+#ifdef CONFIG_BLOCKIO_UX_OPT
+struct bio* get_top_bio(struct bio *bio)
+{
+	struct bio *parent = bio;
+check_again:
+	if (parent->bi_end_io == bio_chain_endio) {
+		parent = bio->bi_private;
+		goto check_again;
+	}
+
+	return parent;
+}
+#endif
+
 /**
  * bio_chain - chain bio completions
  * @bio: the target bio
