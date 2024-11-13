@@ -781,6 +781,14 @@ ifndef KBUILD_MIXED_TREE
 all: vmlinux
 endif
 
+ifdef CONFIG_ARCH_SUPPORTS_PGO_CLANG
+ifneq ($(KCFLAGS_PGO),)
+CFLAGS_PGO_CLANG := $(KCFLAGS_PGO)
+endif
+export CFLAGS_PGO_CLANG
+$(info pgo flags: $(CFLAGS_PGO_CLANG))
+endif
+
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage
 ifdef CONFIG_CC_IS_GCC
 CFLAGS_GCOV	+= -fno-tree-loop-im
@@ -1016,7 +1024,11 @@ CC_FLAGS_LTO	+= -fvisibility=default
 endif
 
 # Limit inlining across translation units to reduce binary size
+ifdef CONFIG_ARCH_SUPPORTS_PGO_CLANG
+KBUILD_LDFLAGS += -mllvm -import-instr-limit=60
+else
 KBUILD_LDFLAGS += -mllvm -import-instr-limit=5
+endif
 
 # Check for frame size exceeding threshold during prolog/epilog insertion
 # when using lld < 13.0.0.

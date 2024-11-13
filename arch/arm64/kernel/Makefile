@@ -5,6 +5,8 @@
 
 CFLAGS_armv8_deprecated.o := -I$(src)
 
+PGO_PROFILE := n
+
 CFLAGS_REMOVE_ftrace.o = $(CC_FLAGS_FTRACE)
 CFLAGS_REMOVE_insn.o = $(CC_FLAGS_FTRACE)
 CFLAGS_REMOVE_return_address.o = $(CC_FLAGS_FTRACE)

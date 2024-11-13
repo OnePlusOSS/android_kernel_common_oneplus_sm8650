@@ -618,7 +618,12 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 		total_isolated += isolated;
 		cc->nr_freepages += isolated;
 		list_add_tail(&page->lru, freelist);
-
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		if (is_migrate_ext(get_pageblock_migratetype(page))) {
+			dump_page(page, "incorrect isolate");
+			CHP_BUG_ON(1);
+		}
+#endif
 		if (!strict && cc->nr_migratepages <= cc->nr_freepages) {
 			blockpfn += isolated;
 			break;
@@ -686,6 +691,9 @@ isolate_freepages_range(struct compact_control *cc,
 {
 	unsigned long isolated, pfn, block_start_pfn, block_end_pfn;
 	LIST_HEAD(freelist);
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	struct page *page;
+#endif
 
 	pfn = start_pfn;
 	block_start_pfn = pageblock_start_pfn(pfn);
@@ -712,9 +720,18 @@ isolate_freepages_range(struct compact_control *cc,
 			block_end_pfn = min(block_end_pfn, end_pfn);
 		}
 
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+		page = pageblock_pfn_to_page(block_start_pfn, block_end_pfn, cc->zone);
+		if (!page)
+			break;
+		if (is_migrate_ext(get_pageblock_migratetype(page)))
+			break;
+#else
+
 		if (!pageblock_pfn_to_page(block_start_pfn,
 					block_end_pfn, cc->zone))
 			break;
+#endif
 
 		isolated = isolate_freepages_block(cc, &isolate_start_pfn,
 					block_end_pfn, &freelist, 0, true);
@@ -1309,6 +1326,11 @@ static bool suitable_migration_target(struct compact_control *cc,
 			return false;
 	}
 
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	if (is_migrate_ext(get_pageblock_migratetype(page)))
+		return false;
+#endif
+
 	if (cc->ignore_block_suitable)
 		return true;
 
@@ -1393,6 +1415,10 @@ fast_isolate_around(struct compact_control *cc, unsigned long pfn)
 	if (!page)
 		return;
 
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	if (is_migrate_ext(get_pageblock_migratetype(page)))
+		return;
+#endif
 	isolate_freepages_block(cc, &start_pfn, end_pfn, &cc->freepages, 1, false);
 
 	/* Skip this pageblock in the future as it's full or nearly full */
@@ -1519,6 +1545,12 @@ fast_isolate_freepages(struct compact_control *cc)
 
 		/* Isolate the page if available */
 		if (page) {
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+			if (is_migrate_ext(get_pageblock_migratetype(page))) {
+				dump_page(page, "incorrect isolate");
+				CHP_BUG_ON(1);
+			}
+#endif
 			if (__isolate_free_page(page, order)) {
 				set_page_private(page, order);
 				nr_isolated = 1 << order;
@@ -2178,6 +2210,15 @@ static enum compact_result __compact_finished(struct compact_control *cc)
 out:
 	if (cc->contended || fatal_signal_pending(current))
 		ret = COMPACT_CONTENDED;
+
+#ifdef CONFIG_OPLUS_FEATURE_ABORT_MM
+	/* Abort compact when receive SIGUSR2 */
+	if (unlikely(sigismember(&current->pending.signal, SIGUSR2) ||
+		sigismember(&current->signal->shared_pending.signal, SIGUSR2))) {
+		pr_debug_ratelimited("abort compact\n");
+		ret = COMPACT_CONTENDED;
+	}
+#endif
 
 	return ret;
 }

@@ -477,6 +477,10 @@ kernel_build(
     strip_modules = True,
 )
 
+load(":consolidate.bzl", "define_consolidate")
+
+define_consolidate()
+
 kernel_build(
     name = "db845c_with_kgdb",
     outs = [

@@ -157,10 +157,17 @@ ifdef CONFIG_LTO_CLANG
 cmd_ld_single_m = $(if $(is-single-obj-m), ; $(LD) $(ld_flags) -r -o $(tmp-target) $@; mv $(tmp-target) $@)
 endif
 
+ifneq ($(CFLAGS_PGO_CLANG),)
+quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
+      cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $(patsubst $(srctree)/%,source/%,$<) \
+		$(cmd_ld_single_m) \
+		$(cmd_objtool)
+else
 quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
       cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $< \
 		$(cmd_ld_single_m) \
 		$(cmd_objtool)
+endif
 
 ifdef CONFIG_MODVERSIONS
 # When module versioning is enabled the following steps are executed:

@@ -187,6 +187,7 @@
   __traceiter_sched_stat_wait
   __traceiter_sched_waking
   __traceiter_task_rename
+  __traceiter_android_vh_tune_swappiness
   __traceiter_android_vh_test_clear_look_around_ref
   __traceiter_android_vh_tune_swappiness
   __traceiter_android_vh_alloc_pages_reclaim_bypass
@@ -268,6 +269,7 @@
   __tracepoint_android_vh_sched_stat_runtime_rt
   __tracepoint_android_vh_shrink_node_memcgs
   __tracepoint_android_vh_sync_txn_recvd
+  __tracepoint_android_vh_tune_swappiness
   __tracepoint_android_vh_task_blocks_on_rtmutex
   __tracepoint_android_vh_test_clear_look_around_ref
   __tracepoint_android_vh_tune_swappiness
@@ -313,4 +315,10 @@
   wakeup_source_remove
   wake_up_state
   wq_worker_comm
+  __traceiter_android_vh_meminfo_proc_show
+  __tracepoint_android_vh_meminfo_proc_show
+  __traceiter_android_vh_tune_scan_type
+  __tracepoint_android_vh_tune_scan_type
+  xt_register_match
+  xt_unregister_match
   zero_pfn
