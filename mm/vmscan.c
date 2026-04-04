@@ -608,7 +608,14 @@ unsigned long zone_reclaimable_pages(struct zone *zone)
 	if (can_reclaim_anon_pages(NULL, zone_to_nid(zone), NULL))
 		nr += zone_page_state_snapshot(zone, NR_ZONE_INACTIVE_ANON) +
 			zone_page_state_snapshot(zone, NR_ZONE_ACTIVE_ANON);
-
+	/*
+	 * If there are no reclaimable file-backed or anonymous pages,
+	 * ensure zones with sufficient free pages are not skipped.
+	 * This prevents zones like DMA32 from being ignored in reclaim
+	 * scenarios where they can still help alleviate memory pressure.
+	 */
+	if (nr == 0)
+		nr = zone_page_state_snapshot(zone, NR_FREE_PAGES);
 	return nr;
 }
 
@@ -812,6 +819,7 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 
 	freeable = shrinker->count_objects(shrinker, shrinkctl);
 	trace_android_vh_do_shrink_slab(shrinker, &freeable);
+	trace_android_vh_do_shrink_slab_ex(shrinkctl, shrinker, &freeable, priority);
 	if (freeable == 0 || freeable == SHRINK_EMPTY)
 		return freeable;
 
@@ -2835,6 +2843,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 		}
 
 		trace_android_vh_page_referenced_check_bypass(folio, nr_to_scan, lru, &bypass);
+		trace_android_vh_folio_referenced_check_bypass(folio, sc->priority,
+					     nr_to_scan, lru, &bypass);
 		if (bypass)
 			goto skip_folio_referenced;
 		trace_android_vh_folio_trylock_set(folio);
@@ -5864,8 +5874,8 @@ static void lru_gen_shrink_node(struct pglist_data *pgdat, struct scan_control *
 
 	blk_finish_plug(&plug);
 done:
-	/* kswapd should never fail */
-	pgdat->kswapd_failures = 0;
+	if (sc->nr_reclaimed > reclaimed)
+		pgdat->kswapd_failures = 0;
 }
 
 /******************************************************************************
@@ -6867,6 +6877,7 @@ static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 	struct lruvec *target_lruvec;
 	bool reclaimable = false;
 
+	trace_android_vh_shrink_node(pgdat, sc->target_mem_cgroup);
 	if (lru_gen_enabled() && global_reclaim(sc)) {
 		lru_gen_shrink_node(pgdat, sc);
 		return;
@@ -7186,12 +7197,6 @@ static void snapshot_chp_refaults(struct mem_cgroup *target_memcg, pg_data_t *pg
 }
 #endif
 
-#ifdef CONFIG_OPLUS_FEATURE_UXMEM_OPT
-extern bool current_is_key_task(void);
-static unsigned long allocstall_ux = 0;
-module_param_named(allocstall_ux, allocstall_ux, ulong, S_IRUGO | S_IWUSR);
-#endif
-
 /*
  * This is the main entry point to direct page reclaim.
  *
@@ -7222,12 +7227,6 @@ retry:
 
 	if (!cgroup_reclaim(sc))
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
-#ifdef CONFIG_OPLUS_FEATURE_UXMEM_OPT
-	if (current_is_key_task())
-		allocstall_ux += 1;
-#endif
-
-
 
 	do {
 		if (!sc->proactive)
@@ -8857,7 +8856,7 @@ int node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned int order)
 		return NODE_RECLAIM_NOSCAN;
 
 	ret = __node_reclaim(pgdat, gfp_mask, order);
-	clear_bit(PGDAT_RECLAIM_LOCKED, &pgdat->flags);
+	clear_bit_unlock(PGDAT_RECLAIM_LOCKED, &pgdat->flags);
 
 	if (!ret)
 		count_vm_event(PGSCAN_ZONE_RECLAIM_FAILED);

@@ -58,6 +58,25 @@ bool should_be_protect(struct folio *folio, bool mem_is_low);
 
 void page_writeback_init(void);
 
+/*
+ * This is a file-backed mapping, and is about to be memory mapped - invoke its
+ * mmap hook and safely handle error conditions. On error, VMA hooks will be
+ * mutated.
+ *
+ * @file: File which backs the mapping.
+ * @vma:  VMA which we are mapping.
+ *
+ * Returns: 0 if success, error otherwise.
+ */
+int mmap_file(struct file *file, struct vm_area_struct *vma);
+
+/*
+ * If the VMA has a close hook then close it, and since closing it might leave
+ * it in an inconsistent state which makes the use of any hooks suspect, clear
+ * them down by installing dummy empty hooks.
+ */
+void vma_close(struct vm_area_struct *vma);
+
 static inline void *folio_raw_mapping(struct folio *folio)
 {
 	unsigned long mapping = (unsigned long)folio->mapping;
@@ -885,34 +904,4 @@ static inline bool vma_soft_dirty_enabled(struct vm_area_struct *vma)
 	return !(vma->vm_flags & VM_SOFTDIRTY);
 }
 
-#ifdef CONFIG_OPLUS_FEATURE_UXMEM_OPT
-enum POOL_MIGRATETYPE {
-	POOL_MIGRATETYPE_UNMOVABLE,
-	POOL_MIGRATETYPE_MOVABLE,
-	POOL_MIGRATETYPE_TYPES_SIZE
-};
-struct ux_page_pool {
-	int low[POOL_MIGRATETYPE_TYPES_SIZE];
-	int high[POOL_MIGRATETYPE_TYPES_SIZE];
-	int count[POOL_MIGRATETYPE_TYPES_SIZE];
-	struct list_head items[POOL_MIGRATETYPE_TYPES_SIZE];
-	spinlock_t lock;
-	unsigned int order;
-	gfp_t gfp_mask;
-};
-
-bool uxmempool_refill(struct page *page, unsigned int order, int migratetype);
-void fill_pcplist_from_uxmempool(struct zone *zone, unsigned int order,
-		struct per_cpu_pages *pcp, int migratetype, struct list_head *list);
-struct page * get_page_from_uxmempool(gfp_t gfp_mask, unsigned int order, int migratetype);
-bool uxmem_should_alloc_pages_retry(gfp_t gfp_mask, unsigned int *alloc_flags,
-		struct zone *preferred_zone);
-bool uxmem_kvmalloc_check_use_vmalloc(size_t size, gfp_t *kmalloc_flags);
-void uxmempool_meminfo_adjust(struct sysinfo *val);
-#endif /* CONFIG_OPLUS_FEATURE_UXMEM_OPT */
-
-#ifdef CONFIG_OPLUS_FEATURE_DYNAMIC_READAHEAD
-void adjust_readaround(struct file_ra_state *ra, pgoff_t pgoff);
-unsigned long adjust_readahead(struct file_ra_state *ra, unsigned long max_pages);
-#endif /* CONFIG_OPLUS_FEATURE_DYNAMIC_READAHEAD */
 #endif	/* __MM_INTERNAL_H */

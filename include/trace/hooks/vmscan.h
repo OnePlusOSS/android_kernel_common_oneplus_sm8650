@@ -24,6 +24,10 @@ DECLARE_HOOK(android_vh_do_shrink_slab,
 DECLARE_HOOK(android_vh_throttle_direct_reclaim_bypass,
 	TP_PROTO(bool *bypass),
 	TP_ARGS(bypass));
+DECLARE_HOOK(android_vh_do_shrink_slab_ex,
+	TP_PROTO(struct shrink_control *shrinkctl, struct shrinker *shrinker,
+	        long *freeable, int priority),
+	TP_ARGS(shrinkctl, shrinker, freeable, priority));
 DECLARE_HOOK(android_vh_shrink_node_memcgs,
 	TP_PROTO(struct mem_cgroup *memcg, bool *skip),
 	TP_ARGS(memcg, skip));
@@ -82,6 +86,12 @@ DECLARE_HOOK(android_vh_do_folio_trylock,
 DECLARE_HOOK(android_vh_page_referenced_check_bypass,
 	TP_PROTO(struct folio *folio, unsigned long nr_to_scan, int lru, bool *bypass),
 	TP_ARGS(folio, nr_to_scan, lru, bypass));
+DECLARE_HOOK(android_vh_folio_referenced_check_bypass,
+	TP_PROTO(struct folio *folio, s8 priority, unsigned long nr_to_scan, int lru, bool *bypass),
+	TP_ARGS(folio, priority, nr_to_scan, lru, bypass));
+DECLARE_HOOK(android_vh_shrink_node,
+	TP_PROTO(pg_data_t *pgdat, struct mem_cgroup *memcg),
+	TP_ARGS(pgdat, memcg));
 DECLARE_HOOK(android_vh_should_memcg_bypass,
 	TP_PROTO(struct mem_cgroup *memcg, int priority, bool *bypass),
 	TP_ARGS(memcg, priority, bypass));
