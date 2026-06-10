@@ -17,6 +17,19 @@ struct blk_flush_queue;
 
 #ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
 #include <linux/sched.h>
+#endif
+struct task_struct;
+
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+bool test_task_ux(struct task_struct *task);
+#else
+static inline bool test_task_ux(struct task_struct *task)
+{
+	return false;
+}
+#endif
+
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
 #include <linux/kthread.h>
 #include <linux/sched/rt.h>
 #include <uapi/linux/sched/types.h>
