@@ -2354,6 +2354,7 @@ bool test_task_ux(struct task_struct *task)
 
 	return ux;
 }
+EXPORT_SYMBOL_GPL(test_task_ux);
 
 static inline bool need_high_pri_worker(struct request_queue *q)
 {
