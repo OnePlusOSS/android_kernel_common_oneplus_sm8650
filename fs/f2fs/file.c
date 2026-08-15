@@ -4665,8 +4665,15 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION_FIXED_OUTPUT
 	if (f2fs_compressed_file(inode)) {
-		err = -EINVAL;
-		goto unlock_out;
+		CLEAR_IFLAG_IF_SET(inode, F2FS_NOCOMP_FL);
+		if (is_inode_flag_set(inode, FI_COMPRESS_RELEASED)) {
+			err = f2fs_reserve_compress_blocks(inode, NULL);
+			if (err < 0)
+				goto unlock_out;
+		}
+		err = f2fs_decompress_inode(inode);
+		if (err < 0)
+			goto unlock_out;
 	}
 #endif
 

@@ -10,6 +10,7 @@
 #include <linux/mpage.h>
 #include <linux/writeback.h>
 #include <linux/blkdev.h>
+#include <linux/blk-mq.h>
 #include <linux/f2fs_fs.h>
 #include <linux/pagevec.h>
 #include <linux/swap.h>
@@ -1907,10 +1908,23 @@ int f2fs_issue_checkpoint(struct f2fs_sb_info *sbi)
 	if (waitqueue_active(&cprc->ckpt_wait_queue))
 		wake_up(&cprc->ckpt_wait_queue);
 
-	if (cprc->f2fs_issue_ckpt)
+	if (cprc->f2fs_issue_ckpt) {
+		bool prio_changed = false;
+		int orig_nice = 0;
+
+		if (test_task_ux(current)) {
+			prio_changed = true;
+			orig_nice = task_nice(cprc->f2fs_issue_ckpt);
+			sched_set_fifo_low(cprc->f2fs_issue_ckpt);
+		}
+
 		wait_for_completion(&req.wait);
-	else
+
+		if (prio_changed)
+			sched_set_normal(cprc->f2fs_issue_ckpt, orig_nice);
+	} else {
 		flush_remained_ckpt_reqs(sbi, &req);
+	}
 
 	return req.ret;
 }
