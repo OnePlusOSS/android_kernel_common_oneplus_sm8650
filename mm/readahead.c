@@ -597,9 +597,6 @@ static void ondemand_readahead(struct readahead_control *ractl,
 	if (req_size > max_pages && bdi->io_pages > max_pages)
 		max_pages = min(req_size, bdi->io_pages);
 
-#ifdef CONFIG_OPLUS_DYNAMIC_READAHEAD
-	max_pages = adjust_readahead(ra, max_pages);
-#endif
 	trace_android_vh_ra_tuning_max_page(ractl, &max_pages);
 
 	/*
@@ -616,7 +613,11 @@ static void ondemand_readahead(struct readahead_control *ractl,
 			1UL << order);
 	if (index == expected || index == (ra->start + ra->size)) {
 		ra->start += ra->size;
-		ra->size = get_next_ra_size(ra, max_pages);
+		/*
+		 * In the case of MADV_HUGEPAGE, the actual size might exceed
+		 * the readahead window.
+		 */
+		ra->size = max(ra->size, get_next_ra_size(ra, max_pages));
 		ra->async_size = ra->size;
 		goto readit;
 	}

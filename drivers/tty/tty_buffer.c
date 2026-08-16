@@ -18,6 +18,9 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/ratelimit.h>
+#ifdef CONFIG_OPLUS_FEATURE_BTUART_UX
+#include <linux/workqueue.h>
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 #include "tty.h"
 
 #define MIN_TTYB_SIZE	256
@@ -28,6 +31,13 @@
  * The actual memory limit is > 2x this amount.
  */
 #define TTYB_DEFAULT_MEM_LIMIT	(640 * 1024UL)
+
+#ifdef CONFIG_OPLUS_FEATURE_BTUART_UX
+/*
+ * TTY buffer dedicated workqueue
+ */
+static struct workqueue_struct *tty_buffer_wq;
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 
 /*
  * We default to dicing tty buffer allocations to this many characters
@@ -76,7 +86,11 @@ void tty_buffer_unlock_exclusive(struct tty_port *port)
 	atomic_dec(&buf->priority);
 	mutex_unlock(&buf->lock);
 	if (restart)
+#ifndef CONFIG_OPLUS_FEATURE_BTUART_UX
 		queue_work(system_unbound_wq, &buf->work);
+#else /* CONFIG_OPLUS_FEATURE_BTUART_UX */
+		queue_work(tty_buffer_wq, &buf->work);
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 }
 EXPORT_SYMBOL_GPL(tty_buffer_unlock_exclusive);
 
@@ -601,7 +615,11 @@ void tty_flip_buffer_push(struct tty_port *port)
 	struct tty_bufhead *buf = &port->buf;
 
 	tty_flip_buffer_commit(buf->tail);
+#ifndef CONFIG_OPLUS_FEATURE_BTUART_UX
 	queue_work(system_unbound_wq, &buf->work);
+#else /* CONFIG_OPLUS_FEATURE_BTUART_UX */
+	queue_work(tty_buffer_wq, &buf->work);
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 }
 EXPORT_SYMBOL(tty_flip_buffer_push);
 
@@ -631,7 +649,11 @@ int tty_insert_flip_string_and_push_buffer(struct tty_port *port,
 		tty_flip_buffer_commit(buf->tail);
 	spin_unlock_irqrestore(&port->lock, flags);
 
+#ifndef CONFIG_OPLUS_FEATURE_BTUART_UX
 	queue_work(system_unbound_wq, &buf->work);
+#else /* CONFIG_OPLUS_FEATURE_BTUART_UX */
+	queue_work(tty_buffer_wq, &buf->work);
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 
 	return size;
 }
@@ -684,7 +706,11 @@ void tty_buffer_set_lock_subclass(struct tty_port *port)
 
 bool tty_buffer_restart_work(struct tty_port *port)
 {
+#ifndef CONFIG_OPLUS_FEATURE_BTUART_UX
 	return queue_work(system_unbound_wq, &port->buf.work);
+#else /* CONFIG_OPLUS_FEATURE_BTUART_UX */
+	return queue_work(tty_buffer_wq, &port->buf.work);
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
 }
 
 bool tty_buffer_cancel_work(struct tty_port *port)
@@ -696,3 +722,37 @@ void tty_buffer_flush_work(struct tty_port *port)
 {
 	flush_work(&port->buf.work);
 }
+
+#ifdef CONFIG_OPLUS_FEATURE_BTUART_UX
+/**
+ * tty_buffer_workqueue_init - initialize TTY buffer workqueue
+ *
+ * Initialize the dedicated workqueue for TTY buffer processing.
+ */
+static int __init tty_buffer_workqueue_init(void)
+{
+	tty_buffer_wq = alloc_workqueue("tty_buffer_wq", WQ_UNBOUND | WQ_HIGHPRI | WQ_UX, 1);
+	if (!tty_buffer_wq) {
+		pr_err("Failed to create tty_buffer_wq\n");
+		return -ENOMEM;
+	}
+	pr_info("TTY buffer workqueue initialized\n");
+	return 0;
+}
+
+/**
+ * tty_buffer_workqueue_exit - cleanup TTY buffer workqueue
+ *
+ * Destroy the dedicated workqueue for TTY buffer processing.
+ */
+static void __exit tty_buffer_workqueue_exit(void)
+{
+	if (tty_buffer_wq) {
+		destroy_workqueue(tty_buffer_wq);
+		tty_buffer_wq = NULL;
+	}
+}
+
+subsys_initcall(tty_buffer_workqueue_init);
+module_exit(tty_buffer_workqueue_exit);
+#endif /* CONFIG_OPLUS_FEATURE_BTUART_UX */
