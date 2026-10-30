@@ -10621,6 +10621,7 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 #if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
 		schedtune_root_alloc();
 #endif
+		trace_android_vh_cpu_cgroup_css_alloc_early(parent);
 		/* This is early initialization for the top cgroup */
 		return &root_task_group.css;
 	}
@@ -10632,6 +10633,8 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 #if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
 	schedtune_alloc(tg, parent_css);
 #endif
+
+	trace_android_vh_cpu_cgroup_css_alloc(tg, parent_css);
 
 	return &tg->css;
 }
@@ -10676,6 +10679,8 @@ static void cpu_cgroup_css_free(struct cgroup_subsys_state *css)
 #if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
 	schedtune_free(css);
 #endif
+
+	trace_android_vh_cpu_cgroup_css_free(css);
 }
 
 #ifdef CONFIG_RT_GROUP_SCHED
